@@ -4,61 +4,37 @@ pragma solidity ^0.8.23;
 
 contract EcoChain {
     //
-    enum MemberType {
-        SMALL,
-        MEDIUM,
-        LARGE
-    }
 
-    struct RecyclingCompany {
+    struct Company {
         uint256 id;
-        string companyLogo;
-        string companyName;
-        string companyDescription;
-        string companyAddress;
-        uint16 companyFoundedYear;
-        uint256 trashWeightRequirement;
-        string companyWebsite;
+        address owner;
+        string logo;
+        string name;
+        string description;
+        string location;
+        uint16 foundedYear;
+        string website;
     }
 
-    struct RecylingCompanyRating {
+    struct CompanyReview {
         uint256 companyId;
-        uint256 communityId;
+        address reviewer;
         uint256 rating;
         uint256 timestamp;
-        string feedback;
+        string review;
     }
 
-    struct EcoCommunityRating {
-        uint256 communityId;
-        uint256 companyId;
-        uint256 rating;
-        uint256 timestamp;
-        string feedback;
-    }
+    event NewCompanyCreated();
+    event NewReviewCreated();
 
-    struct EcoCommunity {
-        uint256 id;
-        string communityLogo;
-        string communityName;
-        string communityDescription;
-        string communityAddress;
-        uint16 communityFoundedYear;
-        MemberType communityMemberType;
-        string communityWebsite;
-    }
+    Company[] private companyList;
+    CompanyReview[] private companyReviewList;
 
-    RecyclingCompany[] private recyclingCompanyList;
-    RecylingCompanyRating[] private recylingCompanyRating;
+    modifier onlyCompany(address _user, uint256 _companyId) {
+        uint256 companyLength = companyList.length;
+        if (companyList[_companyId].owner == _user) {
 
-    EcoCommunity[] private ecoCommunityList;
-    EcoCommunityRating[] private ecoCommunityRating;
-
-    modifier onlyCompany {
-        _;
-    }
-
-    modifier onlyCommunity {
+        }
         _;
     }
 
@@ -66,63 +42,47 @@ contract EcoChain {
         string memory _logo,
         string memory _name,
         string memory _description,
-        string memory _address,
+        string memory _location,
         uint16 _foundedYear,
-        uint256 _trashWeightRequirement,
         string memory _website
     ) external {
-        recyclingCompanyList.push(
-            RecyclingCompany({
-                id: recyclingCompanyList.length,
-                companyLogo: _logo,
-                companyName: _name,
-                companyDescription: _description,
-                companyAddress: _address,
-                companyFoundedYear: _foundedYear,
-                trashWeightRequirement: _trashWeightRequirement,
-                companyWebsite: _website
+        companyList.push(
+            Company({
+                id: companyList.length,
+                owner: msg.sender,
+                logo: _logo,
+                name: _name,
+                description: _description,
+                location: _location,
+                foundedYear: _foundedYear,
+                website: _website
+            })
+        );
+
+    }
+
+    function requestTransactionToCompany(uint256 _companyId) external {
+
+    }
+
+    function approveUserRequest(address _user, uint256 _companyId) onlyCompany(msg.sender, _companyId) external {
+
+    }
+
+    function giveReviewToCompany(uint256 _companyId, string memory _review, uint8 _rating) external {
+        companyReviewList.push(
+            CompanyReview({
+                companyId: _companyId,
+                reviewer: msg.sender,
+                rating: _rating,
+                timestamp: block.timestamp,
+                review: _review
             })
         );
     }
 
-    function registerEcoCommunity(
-        string memory _image,
-        string memory _name,
-        string memory _description,
-        string memory _address,
-        uint16 _foundedYear,
-        uint8 _memberCountState,
-        string memory _website
-    ) external {
-
-    }
-
-    function requestConnectionToCompany(uint256 _companyId) onlyCommunity() external {
-
-    }
-
-    function approveCommunityRequest(uint256 _communityId) onlyCompany() external {
-
-    }
-
-    function approveCompanyProcess() external onlyCommunity() {
-        
-    }
-
-    function giveFeedbackToCompany() external onlyCommunity() {
-
-    }
-
-    function giveFeedbackToCommunity() external onlyCompany() {
-
-    }
-
-    function getEcoCommunity() external view returns (EcoCommunity[] memory) {
-        return ecoCommunityList;
-    }
-
-    function getRecyclingCompany() external view returns (RecyclingCompany[] memory) {
-        return recyclingCompanyList;
+    function getRecyclingCompany() external view returns (Company[] memory) {
+        return companyList;
     }
     //
 }
