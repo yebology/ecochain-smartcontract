@@ -4,12 +4,13 @@ pragma solidity ^0.8.23;
 
 import {NFT} from "../src/NFT.sol";
 import {Token} from "../src/Token.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-contract EcoChain {
+contract EcoChain is ReentrancyGuard {
     //
-    struct Company {
+    struct WasteBank {
         uint256 id;
-        address owner;
+        address wallet;
         string logo;
         string name;
         string description;
@@ -17,8 +18,8 @@ contract EcoChain {
         uint16 foundedYear;
         string website;
     }
-    struct CompanyReview {
-        uint256 companyId;
+    struct Review {
+        uint256 wasteBankId;
         address reviewer;
         uint256 rating;
         uint256 timestamp;
@@ -26,63 +27,82 @@ contract EcoChain {
     }
     struct Transaction {
         uint256 id;
-        uint256 companyId;
+        uint256 wasteBankId;
         address user;
-        uint256 rcyclReceived;
+        uint256 tokenReceived;
         uint256 bottleWeightInKg;
         uint256 paperWeightInKg;
         uint256 canWeightInKg;
         uint256 timestamp;
         bool isApproved;
     }
+    struct NFTArt {
+        uint256 id;
+        string name;
+        string description;
+        uint256 price;
+        bool isBought;
+    }
 
-    Company[] private companyList;
-    CompanyReview[] private companyReviewList;
+    WasteBank[] private wasteBankList;
+    Review[] private reviewList;
     Transaction[] private transactionList;
+    NFTArt[] private nftArtList;
 
     Token token;
+    NFT nft;
+    address nftCreator;
 
     uint256 constant BOTTLE_PRICE_PER_KG = 10;
     uint256 constant PAPER_PRICE_PER_KG = 20;
     uint256 constant CAN_PRICE_PER_KG = 30;
 
-    mapping(uint256 companyId => address nftAssets) private nftAssetsByCompany;
-
-    event CompanyRegistered(address indexed creator, string indexed name);
-    event ReviewCreated(address indexed user, uint256 indexed companyId);
-    event TransactionCreated(uint256 indexed companyId, address indexed user);
+    event WasteBankRegistered(address indexed creator, string indexed name);
+    event ReviewCreated(address indexed user, uint256 indexed wasteBankId);
+    event TransactionCreated(uint256 indexed wasteBankId, address indexed user);
     event ApprovedTransaction(
         address indexed user,
         uint256 indexed transactionId
     );
-    event CompanyNFTCreated(
-        uint256 indexed companyId,
+    event WasteBankNFTCreated(
+        uint256 indexed wasteBankId,
         address indexed nftAddress
     );
-    event CompanyNFTMinted(uint256 indexed companyId, uint256 indexed tokenId);
+    event WasteBankNFTMinted(
+        uint256 indexed wasteBankId,
+        uint256 indexed tokenId
+    );
+    event NewNFTMinted(uint256 indexed tokenId);
 
-    error InvalidCompanyOwner();
+    error InvalidWasteBankWallet();
     error InvalidUser();
-    error CompanyAlreadyHasNFT();
-    error NFTNotInitialized();
+    error NFTArtNotInitialized();
+    error TransactionAlreadyApproved();
+    error NonExistingTransaction();
+    error NotNFTCreator();
+    error InsufficientBalance();
 
-    modifier ensureCompanyHasNoNFT(uint256 _companyId) {
-        if (nftAssetsByCompany[_companyId] != address(0)) {
-            revert CompanyAlreadyHasNFT();
+    modifier requireExistingTransaction(uint256 _transactionId) {
+        if (transactionList.length < _transactionId) {
+            revert NonExistingTransaction();
         }
         _;
     }
 
-    modifier requireExistingNFT(uint256 _companyId) {
-        if (nftAssetsByCompany[_companyId] == address(0)) {
-            revert NFTNotInitialized();
+    modifier requireNFTAlreadyInitialized(uint256 _tokenId) {
+        if (nftArtList.length == 0) {
+            revert NFTArtNotInitialized();
         }
+
+        // if (nftArtList[_tokenId] == null) {
+        //     revert NFTArtNotInitialized();
+        // }
         _;
     }
 
-    modifier onlyCompany(address _user, uint256 _companyId) {
-        if (companyList[_companyId].owner != _user) {
-            revert InvalidCompanyOwner();
+    modifier onlyWasteBank(address _wallet, uint256 _wasteBankId) {
+        if (wasteBankList[_wasteBankId].wallet != _wallet) {
+            revert InvalidWasteBankWallet();
         }
         _;
     }
@@ -94,12 +114,36 @@ contract EcoChain {
         _;
     }
 
-    constructor() {
-        token = new Token();
-        token.mintToken(address(this), 10000);
+    modifier onlyNFTCreator() {
+        if (msg.sender != nftCreator) {
+            revert NotNFTCreator();
+        }
+        _;
     }
 
-    function registerRecyclingCompany(
+    modifier checkTransactionStatus(uint256 _transactionId) {
+        if (transactionList[_transactionId].isApproved == true) {
+            revert TransactionAlreadyApproved();
+        }
+        _;
+    }
+
+    modifier checkUserBalance(uint256 _tokenId) {
+        uint256 userBalance = token.getBalance();
+        uint256 nftArtPrice = nftArtList[_tokenId].price;
+        if (userBalance < nftArtPrice) {
+            revert InsufficientBalance();
+        }
+        _;
+    }
+
+    constructor() {
+        token = new Token();
+        nft = new NFT();
+        nftCreator = msg.sender;
+    }
+
+    function registerWasteBank(
         string memory _logo,
         string memory _name,
         string memory _description,
@@ -107,10 +151,10 @@ contract EcoChain {
         uint16 _foundedYear,
         string memory _website
     ) external {
-        companyList.push(
-            Company({
-                id: companyList.length,
-                owner: msg.sender,
+        wasteBankList.push(
+            WasteBank({
+                id: wasteBankList.length,
+                wallet: msg.sender,
                 logo: _logo,
                 name: _name,
                 description: _description,
@@ -119,25 +163,25 @@ contract EcoChain {
                 website: _website
             })
         );
-        emit CompanyRegistered(msg.sender, _name);
+        emit WasteBankRegistered(msg.sender, _name);
     }
 
     function createTransaction(
-        uint256 _companyId,
+        uint256 _wasteBankId,
         address _user,
         uint256 _bottleWeightInKg,
         uint256 _paperWeightInKg,
         uint256 _canWeightInKg
-    ) external onlyCompany(msg.sender, _companyId) {
+    ) external onlyWasteBank(msg.sender, _wasteBankId) {
         uint256 totalValue = (_bottleWeightInKg * BOTTLE_PRICE_PER_KG) +
             (_paperWeightInKg * PAPER_PRICE_PER_KG) +
             (_canWeightInKg * CAN_PRICE_PER_KG);
         transactionList.push(
             Transaction({
                 id: transactionList.length,
-                companyId: _companyId,
+                wasteBankId: _wasteBankId,
                 user: _user,
-                rcyclReceived: totalValue,
+                tokenReceived: totalValue,
                 bottleWeightInKg: _bottleWeightInKg,
                 paperWeightInKg: _paperWeightInKg,
                 canWeightInKg: _canWeightInKg,
@@ -145,67 +189,78 @@ contract EcoChain {
                 isApproved: false
             })
         );
-        emit TransactionCreated(_companyId, _user);
-    }
-
-    function createCompanyNFT(
-        uint256 _companyId,
-        string memory _nftName,
-        string memory _nftSymbol
-    )
-        external
-        onlyCompany(msg.sender, _companyId)
-        ensureCompanyHasNoNFT(_companyId)
-    {
-        NFT nft = new NFT(_nftName, _nftSymbol);
-        nftAssetsByCompany[_companyId] = address(nft);
-        emit CompanyNFTCreated(_companyId, address(nft));
-    }
-
-    function addCompanyNFT(
-        uint256 _companyId,
-        uint256 _tokenId,
-        string memory _uri
-    )
-        external
-        onlyCompany(msg.sender, _companyId)
-        requireExistingNFT(_companyId)
-    {
-        address companyNFT = nftAssetsByCompany[_companyId];
-        NFT(companyNFT).mintNFT(msg.sender, _tokenId, _uri);
-        emit CompanyNFTMinted(_companyId, _tokenId);
+        emit TransactionCreated(_wasteBankId, _user);
     }
 
     function approveTransaction(
         uint256 _transactionId
-    ) external onlyUser(_transactionId, msg.sender) {
+    )
+        external
+        requireExistingTransaction(_transactionId)
+        onlyUser(_transactionId, msg.sender)
+        checkTransactionStatus(_transactionId)
+    {
         transactionList[_transactionId].isApproved = true;
+        _sendTokenToUser(_transactionId);
         emit ApprovedTransaction(msg.sender, _transactionId);
     }
 
-    function giveReviewToCompany(
-        uint256 _companyId,
+    function _sendTokenToUser(uint256 _transactionId) private nonReentrant() {
+        uint256 tokenValue = transactionList[_transactionId].tokenReceived;
+        token.mintToken(msg.sender, tokenValue);
+    }
+
+    function swapTokenWithNFT(
+        uint256 _tokenId
+    ) external checkUserBalance(_tokenId) nonReentrant() {
+        uint256 nftArtPrice = nftArtList[_tokenId].price;
+        nft.transferNFT(nftCreator, msg.sender, _tokenId);
+        token.burnToken(msg.sender, nftArtPrice);
+    }
+
+    function giveReview(
+        uint256 _wasteBankId,
         string memory _review,
         uint8 _rating
     ) external {
-        companyReviewList.push(
-            CompanyReview({
-                companyId: _companyId,
+        reviewList.push(
+            Review({
+                wasteBankId: _wasteBankId,
                 reviewer: msg.sender,
                 rating: _rating,
                 timestamp: block.timestamp,
                 review: _review
             })
         );
-        emit ReviewCreated(msg.sender, _companyId);
+        emit ReviewCreated(msg.sender, _wasteBankId);
     }
 
-    function getCompany() external view returns (Company[] memory) {
-        return companyList;
+    function mintNewNFT(
+        string memory _name,
+        string memory _description,
+        uint256 _price,
+        string memory _calldata
+    ) external onlyNFTCreator() nonReentrant() {
+        uint256 tokenId = nftArtList.length;
+        nftArtList.push(
+            NFTArt({
+                id: tokenId,
+                name: _name,
+                description: _description,
+                price: _price,
+                isBought: false
+            })
+        );
+        nft.mintNFT(nftCreator, tokenId, _calldata);
+        emit NewNFTMinted(tokenId);
     }
 
-    function getCompanyReview() external view returns (CompanyReview[] memory) {
-        return companyReviewList;
+    function getWasteBank() external view returns (WasteBank[] memory) {
+        return wasteBankList;
+    }
+
+    function getReview() external view returns (Review[] memory) {
+        return reviewList;
     }
 
     function getTransactionForUser(
@@ -229,20 +284,20 @@ contract EcoChain {
         return transactions;
     }
 
-    function getTransactionForCompany(
-        uint256 _companyId
+    function getTransactionForWasteBank(
+        uint256 _wasteBankId
     ) external view returns (Transaction[] memory) {
         uint256 transactionLength = transactionList.length;
         uint256 index = 0;
-        uint256 companyTransactionTotal = _countCompanyTransaction(
-            _companyId,
+        uint256 wasteBankTransactionTotal = _countWasteBankTransaction(
+            _wasteBankId,
             transactionLength
         );
         Transaction[] memory transactions = new Transaction[](
-            companyTransactionTotal
+            wasteBankTransactionTotal
         );
         for (uint256 i = 0; i < transactionLength; i++) {
-            if (transactionList[i].companyId == _companyId) {
+            if (transactionList[i].wasteBankId == _wasteBankId) {
                 transactions[index] = transactionList[i];
                 index++;
             }
@@ -250,13 +305,13 @@ contract EcoChain {
         return transactions;
     }
 
-    function _countCompanyTransaction(
-        uint256 _companyId,
+    function _countWasteBankTransaction(
+        uint256 _wasteBankId,
         uint256 _size
     ) private view returns (uint256) {
         uint256 total = 0;
         for (uint256 i = 0; i < _size; i++) {
-            if (transactionList[i].companyId == _companyId) {
+            if (transactionList[i].wasteBankId == _wasteBankId) {
                 total++;
             }
         }
