@@ -2,8 +2,8 @@
 
 pragma solidity ^0.8.23;
 
-import { NFT } from "../src/NFT.sol";
-import { Token } from "../src/Token.sol";
+import {NFT} from "../src/NFT.sol";
+import {Token} from "../src/Token.sol";
 
 contract EcoChain {
     //
@@ -40,6 +40,8 @@ contract EcoChain {
     CompanyReview[] private companyReviewList;
     Transaction[] private transactionList;
 
+    Token token;
+
     uint256 constant BOTTLE_PRICE_PER_KG = 10;
     uint256 constant PAPER_PRICE_PER_KG = 20;
     uint256 constant CAN_PRICE_PER_KG = 30;
@@ -48,24 +50,32 @@ contract EcoChain {
 
     event CompanyRegistered(address indexed creator, string indexed name);
     event ReviewCreated(address indexed user, uint256 indexed companyId);
-    event TransactionCreated(
-        uint256 indexed companyId,
-        address indexed user
-    );
+    event TransactionCreated(uint256 indexed companyId, address indexed user);
     event ApprovedTransaction(
         address indexed user,
         uint256 indexed transactionId
     );
-    event CompanyNFTCreated(uint256 indexed companyId, address indexed nftAddress);
+    event CompanyNFTCreated(
+        uint256 indexed companyId,
+        address indexed nftAddress
+    );
     event CompanyNFTMinted(uint256 indexed companyId, uint256 indexed tokenId);
 
     error InvalidCompanyOwner();
     error InvalidUser();
     error CompanyAlreadyHasNFT();
+    error NFTNotInitialized();
 
-    modifier checkCompanyNFT(uint256 _companyId) {
+    modifier ensureCompanyHasNoNFT(uint256 _companyId) {
         if (nftAssetsByCompany[_companyId] != address(0)) {
             revert CompanyAlreadyHasNFT();
+        }
+        _;
+    }
+
+    modifier requireExistingNFT(uint256 _companyId) {
+        if (nftAssetsByCompany[_companyId] == address(0)) {
+            revert NFTNotInitialized();
         }
         _;
     }
@@ -82,6 +92,11 @@ contract EcoChain {
             revert InvalidUser();
         }
         _;
+    }
+
+    constructor() {
+        token = new Token();
+        token.mintToken(address(this), 10000);
     }
 
     function registerRecyclingCompany(
@@ -137,7 +152,11 @@ contract EcoChain {
         uint256 _companyId,
         string memory _nftName,
         string memory _nftSymbol
-    ) external onlyCompany(msg.sender, _companyId) checkCompanyNFT(_companyId) {
+    )
+        external
+        onlyCompany(msg.sender, _companyId)
+        ensureCompanyHasNoNFT(_companyId)
+    {
         NFT nft = new NFT(_nftName, _nftSymbol);
         nftAssetsByCompany[_companyId] = address(nft);
         emit CompanyNFTCreated(_companyId, address(nft));
@@ -147,7 +166,11 @@ contract EcoChain {
         uint256 _companyId,
         uint256 _tokenId,
         string memory _uri
-    ) external onlyCompany(msg.sender, _companyId) {
+    )
+        external
+        onlyCompany(msg.sender, _companyId)
+        requireExistingNFT(_companyId)
+    {
         address companyNFT = nftAssetsByCompany[_companyId];
         NFT(companyNFT).mintNFT(msg.sender, _tokenId, _uri);
         emit CompanyNFTMinted(_companyId, _tokenId);

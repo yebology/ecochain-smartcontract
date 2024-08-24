@@ -22,5 +22,8 @@ contract NFT is ERC721URIStorage, Ownable {
         _setTokenURI(_tokenId, _uri);
     }
 
+    function buyNFT(address _user) external {
+        
+    }
     //
 }
