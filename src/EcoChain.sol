@@ -2,6 +2,9 @@
 
 pragma solidity ^0.8.23;
 
+import { NFT } from "../src/NFT.sol";
+import { Token } from "../src/Token.sol";
+
 contract EcoChain {
     //
     struct Company {
@@ -37,19 +40,35 @@ contract EcoChain {
     CompanyReview[] private companyReviewList;
     Transaction[] private transactionList;
 
-    uint256 constant BOTTLE_PRICE_PER_KG = 0.1 * 1e18;
-    uint256 constant PAPER_PRICE_PER_KG = 0.2 * 1e18;
-    uint256 constant CAN_PRICE_PER_KG = 0.3 * 1e18;
+    uint256 constant BOTTLE_PRICE_PER_KG = 10;
+    uint256 constant PAPER_PRICE_PER_KG = 20;
+    uint256 constant CAN_PRICE_PER_KG = 30;
 
-    event NewCompanyRegistered(address indexed creator, string indexed name);
-    event NewReviewCreated(address indexed user, uint256 indexed companyId);
-    event NewTransactionCreated(
+    mapping(uint256 companyId => address nftAssets) private nftAssetsByCompany;
+
+    event CompanyRegistered(address indexed creator, string indexed name);
+    event ReviewCreated(address indexed user, uint256 indexed companyId);
+    event TransactionCreated(
         uint256 indexed companyId,
         address indexed user
     );
+    event ApprovedTransaction(
+        address indexed user,
+        uint256 indexed transactionId
+    );
+    event CompanyNFTCreated(uint256 indexed companyId, address indexed nftAddress);
+    event CompanyNFTMinted(uint256 indexed companyId, uint256 indexed tokenId);
 
     error InvalidCompanyOwner();
     error InvalidUser();
+    error CompanyAlreadyHasNFT();
+
+    modifier checkCompanyNFT(uint256 _companyId) {
+        if (nftAssetsByCompany[_companyId] != address(0)) {
+            revert CompanyAlreadyHasNFT();
+        }
+        _;
+    }
 
     modifier onlyCompany(address _user, uint256 _companyId) {
         if (companyList[_companyId].owner != _user) {
@@ -85,7 +104,7 @@ contract EcoChain {
                 website: _website
             })
         );
-        emit NewCompanyRegistered(msg.sender, _name);
+        emit CompanyRegistered(msg.sender, _name);
     }
 
     function createTransaction(
@@ -111,13 +130,34 @@ contract EcoChain {
                 isApproved: false
             })
         );
-        emit NewTransactionCreated(_companyId, _user);
+        emit TransactionCreated(_companyId, _user);
+    }
+
+    function createCompanyNFT(
+        uint256 _companyId,
+        string memory _nftName,
+        string memory _nftSymbol
+    ) external onlyCompany(msg.sender, _companyId) checkCompanyNFT(_companyId) {
+        NFT nft = new NFT(_nftName, _nftSymbol);
+        nftAssetsByCompany[_companyId] = address(nft);
+        emit CompanyNFTCreated(_companyId, address(nft));
+    }
+
+    function addCompanyNFT(
+        uint256 _companyId,
+        uint256 _tokenId,
+        string memory _uri
+    ) external onlyCompany(msg.sender, _companyId) {
+        address companyNFT = nftAssetsByCompany[_companyId];
+        NFT(companyNFT).mintNFT(msg.sender, _tokenId, _uri);
+        emit CompanyNFTMinted(_companyId, _tokenId);
     }
 
     function approveTransaction(
         uint256 _transactionId
     ) external onlyUser(_transactionId, msg.sender) {
         transactionList[_transactionId].isApproved = true;
+        emit ApprovedTransaction(msg.sender, _transactionId);
     }
 
     function giveReviewToCompany(
@@ -134,7 +174,7 @@ contract EcoChain {
                 review: _review
             })
         );
-        emit NewReviewCreated(msg.sender, _companyId);
+        emit ReviewCreated(msg.sender, _companyId);
     }
 
     function getCompany() external view returns (Company[] memory) {
