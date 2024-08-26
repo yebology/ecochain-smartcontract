@@ -44,10 +44,10 @@ contract EcoChain is ReentrancyGuard {
         bool isBought;
     }
 
-    WasteBank[] private wasteBankList;
-    Review[] private reviewList;
-    Transaction[] private transactionList;
-    NFTArt[] private nftArtList;
+    WasteBank[] private wasteBanks;
+    Review[] private reviews;
+    Transaction[] private transactions;
+    NFTArt[] private nftArts;
 
     Token token;
     NFT nft;
@@ -72,43 +72,45 @@ contract EcoChain is ReentrancyGuard {
         uint256 indexed wasteBankId,
         uint256 indexed tokenId
     );
-    event NewNFTMinted(uint256 indexed tokenId);
+    event NFTMinted(uint256 indexed tokenId);
+    event NFTPurchased(uint256 indexed tokenId, address indexed user);
 
     error InvalidWasteBankWallet();
     error InvalidUser();
     error NFTArtNotInitialized();
-    error TransactionAlreadyApproved();
+    error TransactionAlreadyApproved(uint256 transactionId);
     error NonExistingTransaction();
     error NotNFTCreator();
     error InsufficientBalance();
+    error NFTAlreadyBought(uint256 tokenId);
+    error InvalidWasteBankData();
+    error InvalidTransactionData();
+    error InvalidReviewData();
+    error InvalidNFTArtData();
 
     modifier requireExistingTransaction(uint256 _transactionId) {
-        if (transactionList.length < _transactionId) {
+        if (transactions.length < _transactionId) {
             revert NonExistingTransaction();
         }
         _;
     }
 
-    modifier requireNFTAlreadyInitialized(uint256 _tokenId) {
-        if (nftArtList.length == 0) {
+    modifier requireNFTAlreadyInitialized() {
+        if (nftArts.length == 0) {
             revert NFTArtNotInitialized();
         }
-
-        // if (nftArtList[_tokenId] == null) {
-        //     revert NFTArtNotInitialized();
-        // }
         _;
     }
 
     modifier onlyWasteBank(address _wallet, uint256 _wasteBankId) {
-        if (wasteBankList[_wasteBankId].wallet != _wallet) {
+        if (wasteBanks[_wasteBankId].wallet != _wallet) {
             revert InvalidWasteBankWallet();
         }
         _;
     }
 
     modifier onlyUser(uint256 _transactionId, address _user) {
-        if (transactionList[_transactionId].user != _user) {
+        if (transactions[_transactionId].user != _user) {
             revert InvalidUser();
         }
         _;
@@ -122,17 +124,86 @@ contract EcoChain is ReentrancyGuard {
     }
 
     modifier checkTransactionStatus(uint256 _transactionId) {
-        if (transactionList[_transactionId].isApproved == true) {
-            revert TransactionAlreadyApproved();
+        if (transactions[_transactionId].isApproved == true) {
+            revert TransactionAlreadyApproved(_transactionId);
         }
         _;
     }
 
     modifier checkUserBalance(uint256 _tokenId) {
-        uint256 userBalance = token.getBalance();
-        uint256 nftArtPrice = nftArtList[_tokenId].price;
+        uint256 userBalance = token.getBalance(msg.sender);
+        uint256 nftArtPrice = nftArts[_tokenId].price;
         if (userBalance < nftArtPrice) {
             revert InsufficientBalance();
+        }
+        _;
+    }
+
+    modifier checkNFTStatus(uint256 _tokenId) {
+        if (nftArts[_tokenId].isBought == true) {
+            revert NFTAlreadyBought(_tokenId);
+        }
+        _;
+    }
+
+    modifier validateWasteBankRegistration(
+        string memory _logo,
+        string memory _name,
+        string memory _description,
+        string memory _location,
+        uint16 _foundedYear,
+        string memory _website
+    ) {
+        if (
+            bytes(_logo).length == 0 ||
+            bytes(_name).length == 0 ||
+            bytes(_description).length == 0 ||
+            bytes(_location).length == 0 ||
+            _foundedYear == 0 ||
+            bytes(_website).length == 0
+        ) {
+            revert InvalidWasteBankData();
+        }
+        _;
+    }
+
+    modifier validateTransaction(
+        address _user,
+        uint256 _bottleWeightInKg,
+        uint256 _paperWeightInKg,
+        uint256 _canWeightInKg
+    ) {
+        if (
+            _user == address(0) ||
+            (_bottleWeightInKg == 0 &&
+                _paperWeightInKg == 0 &&
+                _canWeightInKg == 0)
+        ) {
+            revert InvalidTransactionData();
+        }
+        _;
+    }
+
+    modifier validateReview(string memory _review, uint8 _rating) {
+        if (bytes(_review).length == 0 || _rating == 0) {
+            revert InvalidReviewData();
+        }
+        _;
+    }
+
+    modifier validateNFTArt(
+        string memory _name,
+        string memory _description,
+        uint256 _price,
+        string memory _calldata
+    ) {
+        if (
+            bytes(_name).length == 0 ||
+            bytes(_description).length == 0 ||
+            _price == 0 ||
+            bytes(_calldata).length == 0
+        ) {
+            revert InvalidNFTArtData();
         }
         _;
     }
@@ -150,10 +221,20 @@ contract EcoChain is ReentrancyGuard {
         string memory _location,
         uint16 _foundedYear,
         string memory _website
-    ) external {
-        wasteBankList.push(
+    )
+        external
+        validateWasteBankRegistration(
+            _logo,
+            _name,
+            _description,
+            _location,
+            _foundedYear,
+            _website
+        )
+    {
+        wasteBanks.push(
             WasteBank({
-                id: wasteBankList.length,
+                id: wasteBanks.length,
                 wallet: msg.sender,
                 logo: _logo,
                 name: _name,
@@ -172,13 +253,22 @@ contract EcoChain is ReentrancyGuard {
         uint256 _bottleWeightInKg,
         uint256 _paperWeightInKg,
         uint256 _canWeightInKg
-    ) external onlyWasteBank(msg.sender, _wasteBankId) {
+    )
+        external
+        onlyWasteBank(msg.sender, _wasteBankId)
+        validateTransaction(
+            _user,
+            _bottleWeightInKg,
+            _paperWeightInKg,
+            _canWeightInKg
+        )
+    {
         uint256 totalValue = (_bottleWeightInKg * BOTTLE_PRICE_PER_KG) +
             (_paperWeightInKg * PAPER_PRICE_PER_KG) +
             (_canWeightInKg * CAN_PRICE_PER_KG);
-        transactionList.push(
+        transactions.push(
             Transaction({
-                id: transactionList.length,
+                id: transactions.length,
                 wasteBankId: _wasteBankId,
                 user: _user,
                 tokenReceived: totalValue,
@@ -200,30 +290,38 @@ contract EcoChain is ReentrancyGuard {
         onlyUser(_transactionId, msg.sender)
         checkTransactionStatus(_transactionId)
     {
-        transactionList[_transactionId].isApproved = true;
+        transactions[_transactionId].isApproved = true;
         _sendTokenToUser(_transactionId);
         emit ApprovedTransaction(msg.sender, _transactionId);
     }
 
-    function _sendTokenToUser(uint256 _transactionId) private nonReentrant() {
-        uint256 tokenValue = transactionList[_transactionId].tokenReceived;
+    function _sendTokenToUser(uint256 _transactionId) private nonReentrant {
+        uint256 tokenValue = transactions[_transactionId].tokenReceived;
         token.mintToken(msg.sender, tokenValue);
     }
 
     function swapTokenWithNFT(
         uint256 _tokenId
-    ) external checkUserBalance(_tokenId) nonReentrant() {
-        uint256 nftArtPrice = nftArtList[_tokenId].price;
+    )
+        external
+        requireNFTAlreadyInitialized
+        checkUserBalance(_tokenId)
+        checkNFTStatus(_tokenId)
+        nonReentrant
+    {
+        uint256 nftArtPrice = nftArts[_tokenId].price;
+        nftArts[_tokenId].isBought = true;
         nft.transferNFT(nftCreator, msg.sender, _tokenId);
         token.burnToken(msg.sender, nftArtPrice);
+        emit NFTPurchased(_tokenId, msg.sender);
     }
 
     function giveReview(
         uint256 _wasteBankId,
         string memory _review,
         uint8 _rating
-    ) external {
-        reviewList.push(
+    ) external validateReview(_review, _rating) {
+        reviews.push(
             Review({
                 wasteBankId: _wasteBankId,
                 reviewer: msg.sender,
@@ -240,9 +338,14 @@ contract EcoChain is ReentrancyGuard {
         string memory _description,
         uint256 _price,
         string memory _calldata
-    ) external onlyNFTCreator() nonReentrant() {
-        uint256 tokenId = nftArtList.length;
-        nftArtList.push(
+    )
+        external
+        onlyNFTCreator
+        validateNFTArt(_name, _description, _price, _calldata)
+        nonReentrant
+    {
+        uint256 tokenId = nftArts.length;
+        nftArts.push(
             NFTArt({
                 id: tokenId,
                 name: _name,
@@ -252,57 +355,69 @@ contract EcoChain is ReentrancyGuard {
             })
         );
         nft.mintNFT(nftCreator, tokenId, _calldata);
-        emit NewNFTMinted(tokenId);
+        emit NFTMinted(tokenId);
+    }
+
+    function getUserBalance(address _user) external view returns (uint256) {
+        return token.getBalance(_user);
+    }
+
+    function getNFTAddress() external view returns (address) {
+        return address(nft);
+    }
+
+    function getNFTArt() external view returns (NFTArt[] memory) {
+        return nftArts;
     }
 
     function getWasteBank() external view returns (WasteBank[] memory) {
-        return wasteBankList;
+        return wasteBanks;
     }
 
     function getReview() external view returns (Review[] memory) {
-        return reviewList;
+        return reviews;
     }
 
-    function getTransactionForUser(
+    function getAllTransactionForUser(
         address _user
     ) external view returns (Transaction[] memory) {
-        uint256 transactionLength = transactionList.length;
-        uint256 index = 0;
+        uint256 transactionLength = transactions.length;
         uint256 userTransactionTotal = _countUserTransaction(
             _user,
             transactionLength
         );
-        Transaction[] memory transactions = new Transaction[](
+        Transaction[] memory userTransactions = new Transaction[](
             userTransactionTotal
         );
+        uint256 index = 0;
         for (uint256 i = 0; i < transactionLength; i++) {
             if (transactions[i].user == _user) {
-                transactions[index] = transactionList[i];
+                userTransactions[index] = transactions[i];
                 index++;
             }
         }
-        return transactions;
+        return userTransactions;
     }
 
-    function getTransactionForWasteBank(
+    function getTransactionsForWasteBank(
         uint256 _wasteBankId
     ) external view returns (Transaction[] memory) {
-        uint256 transactionLength = transactionList.length;
-        uint256 index = 0;
+        uint256 transactionLength = transactions.length;
         uint256 wasteBankTransactionTotal = _countWasteBankTransaction(
             _wasteBankId,
             transactionLength
         );
-        Transaction[] memory transactions = new Transaction[](
+        Transaction[] memory wasteBankTransactions = new Transaction[](
             wasteBankTransactionTotal
         );
+        uint256 index = 0;
         for (uint256 i = 0; i < transactionLength; i++) {
-            if (transactionList[i].wasteBankId == _wasteBankId) {
-                transactions[index] = transactionList[i];
+            if (transactions[i].wasteBankId == _wasteBankId) {
+                wasteBankTransactions[index] = transactions[i];
                 index++;
             }
         }
-        return transactions;
+        return wasteBankTransactions;
     }
 
     function _countWasteBankTransaction(
@@ -311,7 +426,7 @@ contract EcoChain is ReentrancyGuard {
     ) private view returns (uint256) {
         uint256 total = 0;
         for (uint256 i = 0; i < _size; i++) {
-            if (transactionList[i].wasteBankId == _wasteBankId) {
+            if (transactions[i].wasteBankId == _wasteBankId) {
                 total++;
             }
         }
@@ -324,7 +439,7 @@ contract EcoChain is ReentrancyGuard {
     ) private view returns (uint256) {
         uint256 total = 0;
         for (uint256 i = 0; i < _size; i++) {
-            if (transactionList[i].user == _user) {
+            if (transactions[i].user == _user) {
                 total++;
             }
         }

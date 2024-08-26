@@ -17,8 +17,8 @@ contract Token is ERC20 {
         _burn(_from, _amount);
     }
 
-    function getBalance() external view returns(uint256) {
-        return balanceOf(msg.sender);
+    function getBalance(address _user) external view returns(uint256) {
+        return balanceOf(_user);
     }
     //
 }
