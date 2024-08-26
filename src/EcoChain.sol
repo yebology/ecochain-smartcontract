@@ -49,9 +49,9 @@ contract EcoChain is ReentrancyGuard {
     Transaction[] private transactions;
     NFTArt[] private nftArts;
 
-    Token token;
-    NFT nft;
-    address nftCreator;
+    Token i_token;
+    NFT i_nft;
+    address i_nftCreator;
 
     uint256 constant BOTTLE_PRICE_PER_KG = 10;
     uint256 constant PAPER_PRICE_PER_KG = 20;
@@ -77,7 +77,8 @@ contract EcoChain is ReentrancyGuard {
 
     error InvalidWasteBankWallet();
     error InvalidUser();
-    error NFTArtNotInitialized();
+    error NonExistingNFTArt();
+    error NonExistingWasteBank();
     error TransactionAlreadyApproved(uint256 transactionId);
     error NonExistingTransaction();
     error NotNFTCreator();
@@ -88,6 +89,13 @@ contract EcoChain is ReentrancyGuard {
     error InvalidReviewData();
     error InvalidNFTArtData();
 
+    modifier requireExistingWasteBank(uint256 _wasteBankId) {
+        if (wasteBanks.length < _wasteBankId) {
+            revert NonExistingWasteBank();
+        }
+        _;
+    }
+
     modifier requireExistingTransaction(uint256 _transactionId) {
         if (transactions.length < _transactionId) {
             revert NonExistingTransaction();
@@ -95,9 +103,9 @@ contract EcoChain is ReentrancyGuard {
         _;
     }
 
-    modifier requireNFTAlreadyInitialized() {
-        if (nftArts.length == 0) {
-            revert NFTArtNotInitialized();
+    modifier requireExistingNFTArt(uint256 _tokenId) {
+        if (nftArts.length < _tokenId) {
+            revert NonExistingNFTArt();
         }
         _;
     }
@@ -117,7 +125,7 @@ contract EcoChain is ReentrancyGuard {
     }
 
     modifier onlyNFTCreator() {
-        if (msg.sender != nftCreator) {
+        if (msg.sender != i_nftCreator) {
             revert NotNFTCreator();
         }
         _;
@@ -131,7 +139,7 @@ contract EcoChain is ReentrancyGuard {
     }
 
     modifier checkUserBalance(uint256 _tokenId) {
-        uint256 userBalance = token.getBalance(msg.sender);
+        uint256 userBalance = i_token.getBalance(msg.sender);
         uint256 nftArtPrice = nftArts[_tokenId].price;
         if (userBalance < nftArtPrice) {
             revert InsufficientBalance();
@@ -209,9 +217,9 @@ contract EcoChain is ReentrancyGuard {
     }
 
     constructor() {
-        token = new Token();
-        nft = new NFT();
-        nftCreator = msg.sender;
+        i_token = new Token();
+        i_nft = new NFT();
+        i_nftCreator = msg.sender;
     }
 
     function registerWasteBank(
@@ -255,6 +263,7 @@ contract EcoChain is ReentrancyGuard {
         uint256 _canWeightInKg
     )
         external
+        requireExistingWasteBank(_wasteBankId)
         onlyWasteBank(msg.sender, _wasteBankId)
         validateTransaction(
             _user,
@@ -297,22 +306,22 @@ contract EcoChain is ReentrancyGuard {
 
     function _sendTokenToUser(uint256 _transactionId) private nonReentrant {
         uint256 tokenValue = transactions[_transactionId].tokenReceived;
-        token.mintToken(msg.sender, tokenValue);
+        i_token.mintToken(msg.sender, tokenValue);
     }
 
     function swapTokenWithNFT(
         uint256 _tokenId
     )
         external
-        requireNFTAlreadyInitialized
+        requireExistingNFTArt(_tokenId)
         checkUserBalance(_tokenId)
         checkNFTStatus(_tokenId)
         nonReentrant
     {
         uint256 nftArtPrice = nftArts[_tokenId].price;
         nftArts[_tokenId].isBought = true;
-        nft.transferNFT(nftCreator, msg.sender, _tokenId);
-        token.burnToken(msg.sender, nftArtPrice);
+        i_nft.transferNFT(i_nftCreator, msg.sender, _tokenId);
+        i_token.burnToken(msg.sender, nftArtPrice);
         emit NFTPurchased(_tokenId, msg.sender);
     }
 
@@ -320,7 +329,9 @@ contract EcoChain is ReentrancyGuard {
         uint256 _wasteBankId,
         string memory _review,
         uint8 _rating
-    ) external validateReview(_review, _rating) {
+    ) external 
+    requireExistingWasteBank(_wasteBankId)
+    validateReview(_review, _rating) {
         reviews.push(
             Review({
                 wasteBankId: _wasteBankId,
@@ -354,16 +365,16 @@ contract EcoChain is ReentrancyGuard {
                 isBought: false
             })
         );
-        nft.mintNFT(nftCreator, tokenId, _calldata);
+        i_nft.mintNFT(i_nftCreator, tokenId, _calldata);
         emit NFTMinted(tokenId);
     }
 
     function getUserBalance(address _user) external view returns (uint256) {
-        return token.getBalance(_user);
+        return i_token.getBalance(_user);
     }
 
     function getNFTAddress() external view returns (address) {
-        return address(nft);
+        return address(i_nft);
     }
 
     function getNFTArt() external view returns (NFTArt[] memory) {
@@ -378,7 +389,7 @@ contract EcoChain is ReentrancyGuard {
         return reviews;
     }
 
-    function getAllTransactionForUser(
+    function getTransactionsForUser(
         address _user
     ) external view returns (Transaction[] memory) {
         uint256 transactionLength = transactions.length;
@@ -401,7 +412,7 @@ contract EcoChain is ReentrancyGuard {
 
     function getTransactionsForWasteBank(
         uint256 _wasteBankId
-    ) external view returns (Transaction[] memory) {
+    ) external requireExistingWasteBank(_wasteBankId) view returns (Transaction[] memory) {
         uint256 transactionLength = transactions.length;
         uint256 wasteBankTransactionTotal = _countWasteBankTransaction(
             _wasteBankId,
