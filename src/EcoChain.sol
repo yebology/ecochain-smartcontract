@@ -193,7 +193,7 @@ contract EcoChain is ReentrancyGuard {
     }
 
     modifier validateReview(string memory _review, uint8 _rating) {
-        if (bytes(_review).length == 0 || _rating == 0) {
+        if (bytes(_review).length == 0 || _rating < 1 || _rating > 5) {
             revert InvalidReviewData();
         }
         _;
@@ -377,31 +377,46 @@ contract EcoChain is ReentrancyGuard {
         return address(i_nft);
     }
 
-    function getNFTArt() external view returns (NFTArt[] memory) {
+    function getNFTArts() external view returns (NFTArt[] memory) {
         return nftArts;
     }
 
-    function getWasteBank() external view returns (WasteBank[] memory) {
+    function getWasteBanks() external view returns (WasteBank[] memory) {
         return wasteBanks;
     }
 
-    function getReview() external view returns (Review[] memory) {
+    function getReviews(uint256 _wasteBankId) external view returns (Review[] memory) {
+        uint256 size = reviews.length;
+        uint256 wasteBankReviewTotal = _countWasteBankReviews(
+            _wasteBankId,
+            size
+        );
+        Review[] memory wasteBankReviews = new Review[](
+            wasteBankReviewTotal
+        );
+        uint256 index = 0;
+        for (uint256 i = 0; i < size; i++) {
+            if (reviews[i].wasteBankId == _wasteBankId) {
+                wasteBankReviews[index] = reviews[i];
+                index++;
+            }
+        }
         return reviews;
     }
 
     function getTransactionsForUser(
         address _user
     ) external view returns (Transaction[] memory) {
-        uint256 transactionLength = transactions.length;
-        uint256 userTransactionTotal = _countUserTransaction(
+        uint256 size = transactions.length;
+        uint256 userTransactionTotal = _countUserTransactions(
             _user,
-            transactionLength
+            size
         );
         Transaction[] memory userTransactions = new Transaction[](
             userTransactionTotal
         );
         uint256 index = 0;
-        for (uint256 i = 0; i < transactionLength; i++) {
+        for (uint256 i = 0; i < size; i++) {
             if (transactions[i].user == _user) {
                 userTransactions[index] = transactions[i];
                 index++;
@@ -413,16 +428,16 @@ contract EcoChain is ReentrancyGuard {
     function getTransactionsForWasteBank(
         uint256 _wasteBankId
     ) external requireExistingWasteBank(_wasteBankId) view returns (Transaction[] memory) {
-        uint256 transactionLength = transactions.length;
-        uint256 wasteBankTransactionTotal = _countWasteBankTransaction(
+        uint256 size = transactions.length;
+        uint256 wasteBankTransactionTotal = _countWasteBankTransactions(
             _wasteBankId,
-            transactionLength
+            size
         );
         Transaction[] memory wasteBankTransactions = new Transaction[](
             wasteBankTransactionTotal
         );
         uint256 index = 0;
-        for (uint256 i = 0; i < transactionLength; i++) {
+        for (uint256 i = 0; i < size; i++) {
             if (transactions[i].wasteBankId == _wasteBankId) {
                 wasteBankTransactions[index] = transactions[i];
                 index++;
@@ -431,7 +446,7 @@ contract EcoChain is ReentrancyGuard {
         return wasteBankTransactions;
     }
 
-    function _countWasteBankTransaction(
+    function _countWasteBankTransactions(
         uint256 _wasteBankId,
         uint256 _size
     ) private view returns (uint256) {
@@ -444,7 +459,17 @@ contract EcoChain is ReentrancyGuard {
         return total;
     }
 
-    function _countUserTransaction(
+    function _countWasteBankReviews(uint256 _wasteBankId, uint256 _size) private view returns (uint256) {
+        uint256 total = 0;
+        for (uint256 i = 0; i < _size; i++) {
+            if (reviews[i].wasteBankId == _wasteBankId) {
+                total++;
+            }
+        }
+        return total;
+    }
+
+    function _countUserTransactions(
         address _user,
         uint256 _size
     ) private view returns (uint256) {
