@@ -6,6 +6,7 @@ import {Test} from "forge-std/Test.sol";
 import {console} from "forge-std/console.sol";
 import {EcoChain} from "../src/EcoChain.sol";
 import {EcoChainDeploy} from "../script/EcoChainDeploy.s.sol";
+import {Token} from "../src/Token.sol";
 
 contract UnitTest is Test {
     //
@@ -14,6 +15,8 @@ contract UnitTest is Test {
 
     address private constant WASTE_BANK = address(1);
     address private constant BOB = address(2);
+    address private constant ALICE = address(3);
+    address private i_deployer;
 
     modifier registerWasteBank() {
         vm.startPrank(WASTE_BANK);
@@ -35,12 +38,56 @@ contract UnitTest is Test {
 
     modifier createTransaction() {
         vm.startPrank(WASTE_BANK);
-        ecoChain.createTransaction(0, BOB, 0, 1, 0);
+        ecoChain.createTransaction(0, BOB, 20, 0, 0);
         vm.stopPrank();
 
         uint256 expectedNumber = 1;
-        uint256 actualNumber = ecoChain.getTransactionsForUser(BOB).length;
+        uint256 actualNumber = ecoChain.getUserTransactions(BOB).length;
         assertEq(expectedNumber, actualNumber);
+        _;
+    }
+
+    modifier createBobTransaction() {
+        vm.startPrank(WASTE_BANK);
+         ecoChain.createTransaction(0, BOB, 2, 0, 0);
+        vm.stopPrank();
+        _;
+    }
+
+    modifier createAliceTransaction() {
+        vm.startPrank(WASTE_BANK);
+        ecoChain.createTransaction(0, ALICE, 30, 0, 0);
+        vm.stopPrank();
+        _;
+    }
+
+    modifier approveTransaction() {
+        vm.startPrank(BOB);
+        ecoChain.approveTransaction(0);
+        vm.stopPrank();
+
+        uint256 expectedNumber = 200;
+        uint256 actualNumber = Token(ecoChain.getTokenAddress()).getBalance(
+            BOB
+        );
+        bool expectedValue = true;
+        bool actualValue = ecoChain.getUserTransactions(BOB)[0].isApproved;
+        assertEq(expectedNumber, actualNumber);
+        assertEq(expectedValue, actualValue);
+        _;
+    }
+
+    modifier approveBobTransaction() {
+        vm.startPrank(BOB);
+        ecoChain.approveTransaction(0);
+        vm.stopPrank();
+        _;
+    }
+
+    modifier approveAliceTransaction() {
+        vm.startPrank(ALICE);
+        ecoChain.approveTransaction(1);
+        vm.stopPrank();
         _;
     }
 
@@ -55,9 +102,37 @@ contract UnitTest is Test {
         _;
     }
 
+    modifier mintNewNFT() {
+        vm.startPrank(i_deployer);
+        ecoChain.mintNewNFT(
+            "SAGE",
+            "Lorem ipsum dolor sit amet",
+            200,
+            "ipfs://sage.com"
+        );
+        vm.stopPrank();
+
+        uint256 expectedNumber = 1;
+        uint256 actualNumber = ecoChain.getNFTArts().length;
+        assertEq(expectedNumber, actualNumber);
+        _;
+    }
+
+    modifier swapTokenWithNFT() {
+        vm.startPrank(BOB);
+        ecoChain.swapTokenWithNFT(0);
+        vm.stopPrank();
+
+        bool expectedValue = true;
+        bool actualValue = ecoChain.getNFTArts()[0].isBought;
+        assertEq(expectedValue, actualValue);
+        _;
+    }
+
     function setUp() public {
         ecoChainDeploy = new EcoChainDeploy();
         ecoChain = ecoChainDeploy.run();
+        i_deployer = msg.sender;
     }
 
     function testRevertIfInvalidWasteBankDataCalled() public {
@@ -113,7 +188,6 @@ contract UnitTest is Test {
         registerWasteBank
         createTransaction
     {
-        console.log(ecoChain.getTransactionsForUser(BOB).length);
         vm.expectRevert(EcoChain.InvalidUser.selector);
         vm.startPrank(WASTE_BANK);
         ecoChain.approveTransaction(0);
@@ -137,12 +211,85 @@ contract UnitTest is Test {
         vm.stopPrank();
     }
 
-    function testRevertIfInvalidReviewDataCalled() public registerWasteBank() {
+    function testRevertIfInvalidReviewDataCalled() public registerWasteBank {
         vm.expectRevert(EcoChain.InvalidReviewData.selector);
         vm.startPrank(BOB);
         ecoChain.giveReview(0, "", 6);
         vm.stopPrank();
     }
+
+    function testRevertIfNotNFTCreatorCalled() public {
+        vm.expectRevert(EcoChain.NotNFTCreator.selector);
+        vm.startPrank(BOB);
+        ecoChain.mintNewNFT("SON", "LOREM IPSUM DOLOR", 50, "ipfs://son.com");
+        vm.stopPrank();
+    }
+
+    function testRevertIfInvalidNFTArtDataCalled() public {
+        vm.expectRevert(EcoChain.InvalidNFTArtData.selector);
+        vm.startPrank(i_deployer);
+        ecoChain.mintNewNFT("", "", 100, "");
+        vm.stopPrank();
+    }
+
+    function testRevertIfNonExistingNFTArtCalled() public {
+        vm.expectRevert(EcoChain.NonExistingNFTArt.selector);
+        vm.startPrank(BOB);
+        ecoChain.swapTokenWithNFT(1);
+        vm.stopPrank();
+    }
+
+    function testRevertIfInsufficientUserBalanceCalled()
+        public
+        mintNewNFT
+        registerWasteBank
+        createBobTransaction
+        approveBobTransaction
+    {
+        vm.expectRevert(EcoChain.InsufficientBalance.selector);
+        vm.startPrank(BOB);
+        ecoChain.swapTokenWithNFT(0);
+        vm.stopPrank();
+    }
+
+    function testRevertIfNFTAlreadyBoughtCalled()
+        public
+        mintNewNFT
+        registerWasteBank
+        createTransaction
+        approveTransaction
+        swapTokenWithNFT
+        createAliceTransaction
+        approveAliceTransaction
+    {
+        vm.expectRevert(abi.encodeWithSelector(EcoChain.NFTAlreadyBought.selector, 0));
+        vm.startPrank(ALICE);
+        ecoChain.swapTokenWithNFT(0);
+        vm.stopPrank();
+    }
+
+    function testSuccessfullyGetTokenAddress() public view {
+        assert(ecoChain.getTokenAddress() != address(0));
+    }
+
+    function testSuccessfullyGetNFTAddress() public view {
+        assert(ecoChain.getNFTAddress() != address(0));
+    }
+
+    function testSuccessfullyGetNFTCreator() public view {
+        assertEq(ecoChain.getNFTCreator(), i_deployer);
+    }
+
+    function testSuccessfullyApproveTransaction()
+        public
+        registerWasteBank
+        createTransaction
+        approveTransaction
+    {}
+
+    function testSuccessfullyGiveReview() public registerWasteBank giveReview {}
+
+    function testSuccessfullyMintNewNFT() public mintNewNFT {}
 
     //
 }

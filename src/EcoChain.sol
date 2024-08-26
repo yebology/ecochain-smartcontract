@@ -353,7 +353,6 @@ contract EcoChain is ReentrancyGuard {
         external
         onlyNFTCreator
         validateNFTArt(_name, _description, _price, _calldata)
-        nonReentrant
     {
         uint256 tokenId = nftArts.length;
         nftArts.push(
@@ -371,6 +370,14 @@ contract EcoChain is ReentrancyGuard {
 
     function getUserBalance(address _user) external view returns (uint256) {
         return i_token.getBalance(_user);
+    }
+
+    function getNFTCreator() external view returns (address) {
+        return i_nftCreator;
+    }
+
+    function getTokenAddress() external view returns (address) {
+        return address(i_token);
     }
 
     function getNFTAddress() external view returns (address) {
@@ -404,7 +411,7 @@ contract EcoChain is ReentrancyGuard {
         return reviews;
     }
 
-    function getTransactionsForUser(
+    function getUserTransactions(
         address _user
     ) external view returns (Transaction[] memory) {
         uint256 size = transactions.length;
@@ -425,7 +432,7 @@ contract EcoChain is ReentrancyGuard {
         return userTransactions;
     }
 
-    function getTransactionsForWasteBank(
+    function getWasteBankTransactions(
         uint256 _wasteBankId
     ) external requireExistingWasteBank(_wasteBankId) view returns (Transaction[] memory) {
         uint256 size = transactions.length;
