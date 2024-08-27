@@ -11,7 +11,7 @@ contract EcoChainDeploy is Script {
 
     function run() external returns (EcoChain) {
         vm.startBroadcast();
-        EcoChain ecoChain = new EcoChain();
+        EcoChain ecoChain = new EcoChain(msg.sender);
         vm.stopBroadcast();
 
         emit EcoChainCreated(address(ecoChain));
