@@ -13,10 +13,8 @@ contract EcoChain is ReentrancyGuard, Ownable {
         uint256 id;
         string country;
         string city;
-        string location;
+        string linkToMap;
         address wallet;
-        uint16 postalCode;
-        uint16 foundedYear;
     }
     struct Review {
         address reviewer;
@@ -28,12 +26,10 @@ contract EcoChain is ReentrancyGuard, Ownable {
         uint256 id;
         uint256 wasteBankId;
         address user;
-        uint256 tokenReceived;
         uint256 bottleWeightInKg;
         uint256 paperWeightInKg;
         uint256 canWeightInKg;
         uint256 timestamp;
-        bool isApproved;
     }
     struct NFTArt {
         uint256 id;
@@ -55,47 +51,23 @@ contract EcoChain is ReentrancyGuard, Ownable {
     uint256 constant PAPER_PRICE_PER_KG = 20;
     uint256 constant CAN_PRICE_PER_KG = 30;
 
-    event WasteBankRegistered(
-        string country,
-        string city,
-        string location,
-        uint16 postalCode
-    );
+    event WasteBankRegistered(string linkToMap);
     event ReviewCreated(address indexed user);
     event TransactionCreated(uint256 indexed wasteBankId, address indexed user);
-    event ApprovedTransaction(
-        address indexed user,
-        uint256 indexed transactionId
-    );
-    event WasteBankNFTCreated(
-        uint256 indexed wasteBankId,
-        address indexed nftAddress
-    );
-    event WasteBankNFTMinted(
-        uint256 indexed wasteBankId,
-        uint256 indexed tokenId
-    );
     event NFTMinted(uint256 indexed tokenId);
     event NFTPurchased(uint256 indexed tokenId, address indexed user);
 
-    error InvalidWasteBankWallet();
-    error InvalidUser();
     error NonExistingNFTArt();
-    error NonExistingWasteBank();
     error TransactionAlreadyApproved(uint256 transactionId);
     error NonExistingTransaction();
     error InsufficientBalance();
+    error WalletAlreadyRegistered();
+    error InvalidUser();
+    error InvalidWasteBankWallet();
     error InvalidWasteBankData();
     error InvalidTransactionData();
     error InvalidReviewData();
     error InvalidNFTArtData();
-
-    modifier requireExistingWasteBank(uint256 _wasteBankId) {
-        if (wasteBanks.length < _wasteBankId) {
-            revert NonExistingWasteBank();
-        }
-        _;
-    }
 
     modifier requireExistingTransaction(uint256 _transactionId) {
         if (transactions.length < _transactionId) {
@@ -111,8 +83,16 @@ contract EcoChain is ReentrancyGuard, Ownable {
         _;
     }
 
-    modifier onlyWasteBank(address _wallet, uint256 _wasteBankId) {
-        if (wasteBanks[_wasteBankId].wallet != _wallet) {
+    modifier onlyWasteBank(address _wallet) {
+        uint256 size = wasteBanks.length;
+        bool isValid = false;
+        for (uint256 i = 0; i < size; i++) {
+            if (wasteBanks[i].wallet == _wallet) {
+                isValid = true;
+                break;
+            }
+        }
+        if (!isValid) {
             revert InvalidWasteBankWallet();
         }
         _;
@@ -125,9 +105,17 @@ contract EcoChain is ReentrancyGuard, Ownable {
         _;
     }
 
-    modifier checkTransactionStatus(uint256 _transactionId) {
-        if (transactions[_transactionId].isApproved == true) {
-            revert TransactionAlreadyApproved(_transactionId);
+    modifier checkWalletStatus(address _wallet) {
+        uint256 size = wasteBanks.length;
+        bool isRegistered = false;
+        for (uint256 i = 0; i < size; i++) {
+            if (wasteBanks[i].wallet == _wallet) {
+                isRegistered = true;
+                break;
+            }
+        }
+        if (isRegistered) {
+            revert WalletAlreadyRegistered();
         }
         _;
     }
@@ -144,17 +132,13 @@ contract EcoChain is ReentrancyGuard, Ownable {
     modifier validateWasteBankRegistration(
         string memory _country,
         string memory _city,
-        string memory _location,
-        uint16 _postalCode,
-        uint16 _foundedYear,
+        string memory _linkToMap,
         address _wallet
     ) {
         if (
             bytes(_country).length == 0 ||
             bytes(_city).length == 0 ||
-            bytes(_location).length == 0 ||
-            _postalCode == 0 ||
-            _foundedYear == 0 ||
+            bytes(_linkToMap).length == 0 ||
             _wallet != address(0)
         ) {
             revert InvalidWasteBankData();
@@ -213,9 +197,7 @@ contract EcoChain is ReentrancyGuard, Ownable {
     function registerWasteBank(
         string memory _country,
         string memory _city,
-        string memory _location,
-        uint16 _postalCode,
-        uint16 _foundedYear,
+        string memory _linkToMap,
         address _wallet
     )
         external
@@ -223,36 +205,22 @@ contract EcoChain is ReentrancyGuard, Ownable {
         validateWasteBankRegistration(
             _country,
             _city,
-            _location,
-            _postalCode,
-            _foundedYear,
+            _linkToMap,
             _wallet
         )
+        checkWalletStatus(_wallet)
     {
-        wasteBanks.push(
-            WasteBank({
-                id: wasteBanks.length,
-                wallet: _wallet,
-                country: _country,
-                city: _city,
-                location: _location,
-                postalCode: _postalCode,
-                foundedYear: _foundedYear
-            })
-        );
-        emit WasteBankRegistered(_country, _city, _location, _postalCode);
+        _addToWasteBanks(_wallet, _country, _city, _linkToMap);
     }
 
     function createTransaction(
-        uint256 _wasteBankId,
         address _user,
         uint256 _bottleWeightInKg,
         uint256 _paperWeightInKg,
         uint256 _canWeightInKg
     )
         external
-        requireExistingWasteBank(_wasteBankId)
-        onlyWasteBank(msg.sender, _wasteBankId)
+        onlyWasteBank(msg.sender)
         validateTransaction(
             _user,
             _bottleWeightInKg,
@@ -260,44 +228,18 @@ contract EcoChain is ReentrancyGuard, Ownable {
             _canWeightInKg
         )
     {
+        uint256 wasteBankId = _searchWasteBankId(msg.sender);
         uint256 totalValue = (_bottleWeightInKg * BOTTLE_PRICE_PER_KG) +
             (_paperWeightInKg * PAPER_PRICE_PER_KG) +
             (_canWeightInKg * CAN_PRICE_PER_KG);
-        transactions.push(
-            Transaction({
-                id: transactions.length,
-                wasteBankId: _wasteBankId,
-                user: _user,
-                tokenReceived: totalValue,
-                bottleWeightInKg: _bottleWeightInKg,
-                paperWeightInKg: _paperWeightInKg,
-                canWeightInKg: _canWeightInKg,
-                timestamp: block.timestamp,
-                isApproved: false
-            })
+        _addToTransactions(
+            wasteBankId,
+            _user,
+            _bottleWeightInKg,
+            _paperWeightInKg,
+            _canWeightInKg
         );
-        emit TransactionCreated(_wasteBankId, _user);
-    }
-
-    function approveTransaction(
-        uint256 _transactionId
-    )
-        external
-        requireExistingTransaction(_transactionId)
-        onlyUser(_transactionId, msg.sender)
-        checkTransactionStatus(_transactionId)
-    {
-        transactions[_transactionId].isApproved = true;
-        _sendTokenToUser(msg.sender, _transactionId);
-        emit ApprovedTransaction(msg.sender, _transactionId);
-    }
-
-    function _sendTokenToUser(
-        address _user,
-        uint256 _transactionId
-    ) private nonReentrant {
-        uint256 tokenValue = transactions[_transactionId].tokenReceived;
-        i_token.mintToken(_user, tokenValue);
+        _sendTokenToUser(_user, totalValue);
     }
 
     function swapTokenWithNFT(
@@ -318,10 +260,7 @@ contract EcoChain is ReentrancyGuard, Ownable {
     function giveReview(
         string memory _review,
         uint8 _rating
-    )
-        external
-        validateReview(_review, _rating)
-    {
+    ) external validateReview(_review, _rating) {
         reviews.push(
             Review({
                 reviewer: msg.sender,
@@ -384,61 +323,86 @@ contract EcoChain is ReentrancyGuard, Ownable {
         return reviews;
     }
 
-    function getUserTransactions(
+    function getTransactions() external view returns (Transaction[] memory) {
+        return transactions;
+    }
+
+    function getUserTransactionsId(
         address _user
-    ) external view returns (Transaction[] memory) {
+    ) external view returns (uint256[] memory) {
         uint256 size = transactions.length;
         uint256 userTransactionTotal = _countUserTransactions(_user, size);
-        Transaction[] memory userTransactions = new Transaction[](
+        uint256[] memory userTransactionsId = new uint256[](
             userTransactionTotal
         );
         uint256 index = 0;
         for (uint256 i = 0; i < size; i++) {
             if (transactions[i].user == _user) {
-                userTransactions[index] = transactions[i];
+                userTransactionsId[index] = i;
                 index++;
             }
         }
-        return userTransactions;
+        return userTransactionsId;
     }
 
-    function getWasteBankTransactions(
-        uint256 _wasteBankId
-    )
-        external
-        view
-        requireExistingWasteBank(_wasteBankId)
-        returns (Transaction[] memory)
-    {
-        uint256 size = transactions.length;
-        uint256 wasteBankTransactionTotal = _countWasteBankTransactions(
-            _wasteBankId,
-            size
+    function _addToWasteBanks(
+        address _wallet,
+        string memory _country,
+        string memory _city,
+        string memory _linkToMap
+    ) private {
+        wasteBanks.push(
+            WasteBank({
+                id: wasteBanks.length,
+                wallet: _wallet,
+                country: _country,
+                city: _city,
+                linkToMap: _linkToMap
+            })
         );
-        Transaction[] memory wasteBankTransactions = new Transaction[](
-            wasteBankTransactionTotal
-        );
-        uint256 index = 0;
-        for (uint256 i = 0; i < size; i++) {
-            if (transactions[i].wasteBankId == _wasteBankId) {
-                wasteBankTransactions[index] = transactions[i];
-                index++;
-            }
-        }
-        return wasteBankTransactions;
+        emit WasteBankRegistered(_linkToMap);
     }
 
-    function _countWasteBankTransactions(
+    function _addToTransactions(
         uint256 _wasteBankId,
-        uint256 _size
+        address _user,
+        uint256 _bottleWeightInKg,
+        uint256 _paperWeightInKg,
+        uint256 _canWeightInKg
+    ) private {
+        transactions.push(
+            Transaction({
+                id: transactions.length,
+                wasteBankId: _wasteBankId,
+                user: _user,
+                bottleWeightInKg: _bottleWeightInKg,
+                paperWeightInKg: _paperWeightInKg,
+                canWeightInKg: _canWeightInKg,
+                timestamp: block.timestamp
+            })
+        );
+        emit TransactionCreated(_wasteBankId, _user);
+    }
+
+    function _sendTokenToUser(
+        address _user,
+        uint256 _amount
+    ) private nonReentrant {
+        i_token.mintToken(_user, _amount);
+    }
+
+    function _searchWasteBankId(
+        address _wallet
     ) private view returns (uint256) {
-        uint256 total = 0;
-        for (uint256 i = 0; i < _size; i++) {
-            if (transactions[i].wasteBankId == _wasteBankId) {
-                total++;
+        uint256 size = wasteBanks.length;
+        uint256 id = 0;
+        for (uint256 i = 0; i < size; i++) {
+            if (wasteBanks[i].wallet == _wallet) {
+                id = i;
+                break;
             }
         }
-        return total;
+        return id;
     }
 
     function _countUserTransactions(

@@ -21,12 +21,11 @@ contract UnitTest is Test {
     modifier registerWasteBank() {
         vm.startPrank(WASTE_BANK);
         ecoChain.registerWasteBank(
-            "Logo.png",
-            "Waste Bank",
-            "Lorem ipsum dolor sit amet",
-            "Surabaya, East Java, Indonesia",
+            "Indonesia",
+            "Surabaya",
+            "google-maps.com",
             1900,
-            "wastebank.co.id"
+            msg.sender
         );
         vm.stopPrank();
 
@@ -36,21 +35,14 @@ contract UnitTest is Test {
         _;
     }
 
-    modifier createTransaction() {
+    modifier createBoTransaction() {
         vm.startPrank(WASTE_BANK);
-        ecoChain.createTransaction(0, BOB, 20, 0, 0);
+        ecoChain.createTransaction(BOB, 20, 0, 0);
         vm.stopPrank();
 
         uint256 expectedNumber = 1;
-        uint256 actualNumber = ecoChain.getUserTransactions(BOB).length;
+        uint256 actualNumber = ecoChain.getTransactions().length;
         assertEq(expectedNumber, actualNumber);
-        _;
-    }
-
-    modifier createBobTransaction() {
-        vm.startPrank(WASTE_BANK);
-         ecoChain.createTransaction(0, BOB, 2, 0, 0);
-        vm.stopPrank();
         _;
     }
 
