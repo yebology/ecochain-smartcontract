@@ -10,11 +10,10 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 contract EcoChain is ReentrancyGuard, Ownable {
     //
     struct WasteBank {
-        uint256 id;
+        address wallet;
         string country;
         string city;
         string linkToMap;
-        address wallet;
     }
     struct Review {
         address reviewer;
@@ -24,7 +23,7 @@ contract EcoChain is ReentrancyGuard, Ownable {
     }
     struct Transaction {
         uint256 id;
-        uint256 wasteBankId;
+        address wasteBankWallet;
         address user;
         uint256 bottleWeightInKg;
         uint256 paperWeightInKg;
@@ -53,7 +52,10 @@ contract EcoChain is ReentrancyGuard, Ownable {
 
     event WasteBankRegistered(string linkToMap);
     event ReviewCreated(address indexed user);
-    event TransactionCreated(uint256 indexed wasteBankId, address indexed user);
+    event TransactionCreated(
+        address indexed wasteBankWallet,
+        address indexed user
+    );
     event NFTMinted(uint256 indexed tokenId);
     event NFTPurchased(uint256 indexed tokenId, address indexed user);
 
@@ -202,15 +204,11 @@ contract EcoChain is ReentrancyGuard, Ownable {
     )
         external
         onlyOwner
-        validateWasteBankRegistration(
-            _country,
-            _city,
-            _linkToMap,
-            _wallet
-        )
+        validateWasteBankRegistration(_country, _city, _linkToMap, _wallet)
         checkWalletStatus(_wallet)
     {
         _addToWasteBanks(_wallet, _country, _city, _linkToMap);
+        emit WasteBankRegistered(_linkToMap);
     }
 
     function createTransaction(
@@ -228,18 +226,18 @@ contract EcoChain is ReentrancyGuard, Ownable {
             _canWeightInKg
         )
     {
-        uint256 wasteBankId = _searchWasteBankId(msg.sender);
         uint256 totalValue = (_bottleWeightInKg * BOTTLE_PRICE_PER_KG) +
             (_paperWeightInKg * PAPER_PRICE_PER_KG) +
             (_canWeightInKg * CAN_PRICE_PER_KG);
         _addToTransactions(
-            wasteBankId,
+            msg.sender,
             _user,
             _bottleWeightInKg,
             _paperWeightInKg,
             _canWeightInKg
         );
         _sendTokenToUser(_user, totalValue);
+        emit TransactionCreated(msg.sender, _user);
     }
 
     function swapTokenWithNFT(
@@ -261,14 +259,7 @@ contract EcoChain is ReentrancyGuard, Ownable {
         string memory _review,
         uint8 _rating
     ) external validateReview(_review, _rating) {
-        reviews.push(
-            Review({
-                reviewer: msg.sender,
-                rating: _rating,
-                timestamp: block.timestamp,
-                review: _review
-            })
-        );
+        _addToReviews(_review, _rating);
         emit ReviewCreated(msg.sender);
     }
 
@@ -285,22 +276,17 @@ contract EcoChain is ReentrancyGuard, Ownable {
     {
         uint256 tokenId = nftArts.length;
         address owner = owner();
-
-        nftArts.push(
-            NFTArt({
-                id: tokenId,
-                name: _name,
-                description: _description,
-                image: _image,
-                price: _price
-            })
-        );
+        _addToNftArts(tokenId, _name, _description, _price, _image);
         i_nft.mintNFT(owner, tokenId, _calldata);
         emit NFTMinted(tokenId);
     }
 
     function getUserBalance(address _user) external view returns (uint256) {
         return i_token.getBalance(_user);
+    }
+
+    function getOwner() external view returns (address) {
+        return owner();
     }
 
     function getTokenAddress() external view returns (address) {
@@ -327,22 +313,22 @@ contract EcoChain is ReentrancyGuard, Ownable {
         return transactions;
     }
 
-    function getUserTransactionsId(
+    function getUserTransactionIds(
         address _user
     ) external view returns (uint256[] memory) {
         uint256 size = transactions.length;
         uint256 userTransactionTotal = _countUserTransactions(_user, size);
-        uint256[] memory userTransactionsId = new uint256[](
+        uint256[] memory userTransactionIds = new uint256[](
             userTransactionTotal
         );
         uint256 index = 0;
         for (uint256 i = 0; i < size; i++) {
             if (transactions[i].user == _user) {
-                userTransactionsId[index] = i;
+                userTransactionIds[index] = i;
                 index++;
             }
         }
-        return userTransactionsId;
+        return userTransactionIds;
     }
 
     function _addToWasteBanks(
@@ -353,18 +339,16 @@ contract EcoChain is ReentrancyGuard, Ownable {
     ) private {
         wasteBanks.push(
             WasteBank({
-                id: wasteBanks.length,
                 wallet: _wallet,
                 country: _country,
                 city: _city,
                 linkToMap: _linkToMap
             })
         );
-        emit WasteBankRegistered(_linkToMap);
     }
 
     function _addToTransactions(
-        uint256 _wasteBankId,
+        address _wasteBankWallet,
         address _user,
         uint256 _bottleWeightInKg,
         uint256 _paperWeightInKg,
@@ -373,7 +357,7 @@ contract EcoChain is ReentrancyGuard, Ownable {
         transactions.push(
             Transaction({
                 id: transactions.length,
-                wasteBankId: _wasteBankId,
+                wasteBankWallet: _wasteBankWallet,
                 user: _user,
                 bottleWeightInKg: _bottleWeightInKg,
                 paperWeightInKg: _paperWeightInKg,
@@ -381,7 +365,35 @@ contract EcoChain is ReentrancyGuard, Ownable {
                 timestamp: block.timestamp
             })
         );
-        emit TransactionCreated(_wasteBankId, _user);
+    }
+
+    function _addToReviews(string memory _review, uint256 _rating) private {
+        reviews.push(
+            Review({
+                reviewer: msg.sender,
+                rating: _rating,
+                timestamp: block.timestamp,
+                review: _review
+            })
+        );
+    }
+
+    function _addToNftArts(
+        uint256 _tokenId,
+        string memory _name,
+        string memory _description,
+        uint256 _price,
+        string memory _image
+    ) private {
+        nftArts.push(
+            NFTArt({
+                id: _tokenId,
+                name: _name,
+                description: _description,
+                image: _image,
+                price: _price
+            })
+        );
     }
 
     function _sendTokenToUser(
@@ -389,20 +401,6 @@ contract EcoChain is ReentrancyGuard, Ownable {
         uint256 _amount
     ) private nonReentrant {
         i_token.mintToken(_user, _amount);
-    }
-
-    function _searchWasteBankId(
-        address _wallet
-    ) private view returns (uint256) {
-        uint256 size = wasteBanks.length;
-        uint256 id = 0;
-        for (uint256 i = 0; i < size; i++) {
-            if (wasteBanks[i].wallet == _wallet) {
-                id = i;
-                break;
-            }
-        }
-        return id;
     }
 
     function _countUserTransactions(
