@@ -6,15 +6,15 @@ import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import {ERC721URIStorage} from "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
-contract NFT is ERC721URIStorage {
+contract NFT is ERC721URIStorage, Ownable {
     //
-    constructor() ERC721("Recycle", "RCYCL"){}
+    constructor(address _owner) ERC721("Recycle", "RCYCL") Ownable(_owner) {}
 
     function mintNFT(
         address _to,
         uint256 _tokenId,
         string calldata _uri
-    ) external {
+    ) external onlyOwner {
         _mint(_to, _tokenId);
         _setTokenURI(_tokenId, _uri);
     }
@@ -23,7 +23,7 @@ contract NFT is ERC721URIStorage {
         address _from,
         address _to,
         uint256 _tokenId
-    ) external {
+    ) external onlyOwner {
         _safeTransfer(_from, _to, _tokenId);
     }
     //

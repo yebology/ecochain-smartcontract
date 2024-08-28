@@ -186,8 +186,9 @@ contract EcoChain is ReentrancyGuard, Ownable {
     }
 
     constructor(address _creator) Ownable(_creator) {
-        i_token = new Token();
-        i_nft = new NFT();
+        address ecoChainAddress = address(this);
+        i_token = new Token(ecoChainAddress);
+        i_nft = new NFT(ecoChainAddress);
     }
 
     function registerWasteBank(
