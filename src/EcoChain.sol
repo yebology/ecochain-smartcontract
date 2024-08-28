@@ -36,11 +36,16 @@ contract EcoChain is ReentrancyGuard, Ownable {
         string image;
         uint256 price;
     }
+    struct FAQ {
+        string question;
+        string answer;
+    }
 
     WasteBank[] private wasteBanks;
     Review[] private reviews;
     Transaction[] private transactions;
     NFTArt[] private nftArts;
+    FAQ[] private faqs;
 
     Token i_token;
     NFT i_nft;
@@ -57,16 +62,17 @@ contract EcoChain is ReentrancyGuard, Ownable {
     );
     event NFTMinted(uint256 indexed tokenId);
     event NFTPurchased(uint256 indexed tokenId, address indexed user);
+    event FAQAdded(string question, string answer);
 
     error NonExistingNFTArt();
     error InsufficientBalance();
-    error WalletAlreadyRegistered();
-    error InvalidUser();
+    error WalletAlreadyRegistered(address wallet);
     error InvalidWasteBankWallet();
     error InvalidWasteBankData();
     error InvalidTransactionData();
     error InvalidReviewData();
     error InvalidNFTArtData();
+    error InvalidFAQData();
 
     modifier requireExistingNFTArt(uint256 _tokenId) {
         if (nftArts.length < _tokenId) {
@@ -100,7 +106,7 @@ contract EcoChain is ReentrancyGuard, Ownable {
             }
         }
         if (isRegistered) {
-            revert WalletAlreadyRegistered();
+            revert WalletAlreadyRegistered(_wallet);
         }
         _;
     }
@@ -124,7 +130,7 @@ contract EcoChain is ReentrancyGuard, Ownable {
             bytes(_country).length == 0 ||
             bytes(_city).length == 0 ||
             bytes(_linkToMap).length == 0 ||
-            _wallet != address(0)
+            _wallet == address(0)
         ) {
             revert InvalidWasteBankData();
         }
@@ -159,24 +165,29 @@ contract EcoChain is ReentrancyGuard, Ownable {
         string memory _name,
         string memory _description,
         uint256 _price,
-        string memory _calldata,
-        string memory _image
+        string memory _calldata
     ) {
         if (
             bytes(_name).length == 0 ||
             bytes(_description).length == 0 ||
             _price == 0 ||
-            bytes(_calldata).length == 0 ||
-            bytes(_image).length == 0
+            bytes(_calldata).length == 0
         ) {
             revert InvalidNFTArtData();
         }
         _;
     }
 
+    modifier validateFAQ(string memory _question, string memory _answer) {
+        if (bytes(_question).length == 0 || bytes(_answer).length == 0) {
+            revert InvalidFAQData();
+        }
+        _;
+    }
+
     constructor(address _creator) Ownable(_creator) {
         i_token = new Token();
-        i_nft = new NFT(_creator);
+        i_nft = new NFT();
     }
 
     function registerWasteBank(
@@ -192,6 +203,31 @@ contract EcoChain is ReentrancyGuard, Ownable {
     {
         _addToWasteBanks(_wallet, _country, _city, _linkToMap);
         emit WasteBankRegistered(_linkToMap);
+    }
+
+    function mintNewNFT(
+        string memory _name,
+        string memory _description,
+        uint256 _price,
+        string memory _calldata
+    )
+        external
+        onlyOwner
+        validateNFTArt(_name, _description, _price, _calldata)
+    {
+        uint256 tokenId = nftArts.length;
+        address owner = owner();
+        _addToNftArts(tokenId, _name, _description, _price, _calldata);
+        i_nft.mintNFT(owner, tokenId, _calldata);
+        emit NFTMinted(tokenId);
+    }
+
+    function addNewFAQ(
+        string memory _question,
+        string memory _answer
+    ) external onlyOwner validateFAQ(_question, _answer) {
+        _addToFAQs(_question, _answer);
+        emit FAQAdded(_question, _answer);
     }
 
     function createTransaction(
@@ -246,24 +282,6 @@ contract EcoChain is ReentrancyGuard, Ownable {
         emit ReviewCreated(msg.sender);
     }
 
-    function mintNewNFT(
-        string memory _name,
-        string memory _description,
-        uint256 _price,
-        string memory _calldata,
-        string memory _image
-    )
-        external
-        onlyOwner
-        validateNFTArt(_name, _description, _price, _calldata, _image)
-    {
-        uint256 tokenId = nftArts.length;
-        address owner = owner();
-        _addToNftArts(tokenId, _name, _description, _price, _image);
-        i_nft.mintNFT(owner, tokenId, _calldata);
-        emit NFTMinted(tokenId);
-    }
-
     function getUserBalance(address _user) external view returns (uint256) {
         return i_token.getBalance(_user);
     }
@@ -294,6 +312,10 @@ contract EcoChain is ReentrancyGuard, Ownable {
 
     function getTransactions() external view returns (Transaction[] memory) {
         return transactions;
+    }
+
+    function getFAQs() external view returns (FAQ[] memory) {
+        return faqs;
     }
 
     function _addToWasteBanks(
@@ -356,6 +378,18 @@ contract EcoChain is ReentrancyGuard, Ownable {
                 description: _description,
                 image: _image,
                 price: _price
+            })
+        );
+    }
+
+    function _addToFAQs(
+        string memory _question, 
+        string memory _answer
+    ) private {
+        faqs.push(
+            FAQ({
+                question: _question,
+                answer: _answer
             })
         );
     }
