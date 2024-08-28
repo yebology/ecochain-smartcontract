@@ -13,9 +13,10 @@ contract UnitTest is Test {
     EcoChainDeploy ecoChainDeploy;
     EcoChain ecoChain;
 
-    address private constant WASTE_BANK = address(1);
-    address private constant BOB = address(2);
-    address private constant ALICE = address(3);
+    address private constant OWNER = address(1);
+    address private constant ECOCHAIN_WASTE_BANK = address(2);
+    address private constant BOB = address(3);
+    address private constant ALICE = address(4);
     address private i_deployer;
 
     modifier registerWasteBank() {
@@ -35,7 +36,7 @@ contract UnitTest is Test {
         _;
     }
 
-    modifier createBoTransaction() {
+    modifier createBobTransaction() {
         vm.startPrank(WASTE_BANK);
         ecoChain.createTransaction(BOB, 20, 0, 0);
         vm.stopPrank();
@@ -235,7 +236,7 @@ contract UnitTest is Test {
         public
         mintNewNFT
         registerWasteBank
-        createBobTransaction
+        
         approveBobTransaction
     {
         vm.expectRevert(EcoChain.InsufficientBalance.selector);
