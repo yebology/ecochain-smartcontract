@@ -35,6 +35,7 @@ contract EcoChain is ReentrancyGuard, Ownable {
         string description;
         string image;
         uint256 price;
+        bool isBought;
     }
     struct FAQ {
         string question;
@@ -67,6 +68,7 @@ contract EcoChain is ReentrancyGuard, Ownable {
     error NonExistingNFTArt();
     error InsufficientBalance();
     error WalletAlreadyRegistered(address wallet);
+    error NFTArtAlreadyBought(uint256 tokenId);
     error InvalidWasteBankWallet();
     error InvalidWasteBankData();
     error InvalidTransactionData();
@@ -107,6 +109,13 @@ contract EcoChain is ReentrancyGuard, Ownable {
         }
         if (isRegistered) {
             revert WalletAlreadyRegistered(_wallet);
+        }
+        _;
+    }
+
+    modifier checkNFTArtStatus(uint256 _tokenId) {
+        if (nftArts[_tokenId].isBought) {
+            revert NFTArtAlreadyBought(_tokenId);
         }
         _;
     }
@@ -265,11 +274,13 @@ contract EcoChain is ReentrancyGuard, Ownable {
     )
         external
         requireExistingNFTArt(_tokenId)
+        checkNFTArtStatus(_tokenId)
         checkUserBalance(_tokenId)
         nonReentrant
     {
         uint256 nftArtPrice = nftArts[_tokenId].price;
         address owner = owner();
+        nftArts[_tokenId].isBought = true;
         i_nft.transferNFT(owner, msg.sender, _tokenId);
         i_token.burnToken(msg.sender, nftArtPrice);
         emit NFTPurchased(_tokenId, msg.sender);
@@ -378,7 +389,8 @@ contract EcoChain is ReentrancyGuard, Ownable {
                 name: _name,
                 description: _description,
                 image: _image,
-                price: _price
+                price: _price,
+                isBought: false
             })
         );
     }

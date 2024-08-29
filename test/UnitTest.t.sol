@@ -16,6 +16,7 @@ contract UnitTest is Test {
     address private i_owner;
     address private constant ECOCHAIN_WASTE_BANK = address(2);
     address private constant BOB = address(3);
+    address private constant ALICE = address(4);
 
     modifier registerWasteBank() {
         vm.startPrank(i_owner);
@@ -41,6 +42,13 @@ contract UnitTest is Test {
         uint256 expectedNumber = 1;
         uint256 actualNumber = ecoChain.getTransactions().length;
         assertEq(expectedNumber, actualNumber);
+        _;
+    }
+
+    modifier createAliceTransaction() {
+        vm.startPrank(ECOCHAIN_WASTE_BANK);
+        ecoChain.createTransaction(ALICE, 20, 0, 0);
+        vm.stopPrank();
         _;
     }
 
@@ -79,6 +87,13 @@ contract UnitTest is Test {
         uint256 expectedNumber = 1;
         uint256 actualNumber = ecoChain.getFAQs().length;
         assertEq(expectedNumber, actualNumber);
+        _;
+    }
+
+    modifier swapBobTokenWithNFT() {
+        vm.startPrank(BOB);
+        ecoChain.swapTokenWithNFT(0);
+        vm.stopPrank();
         _;
     }
 
@@ -168,6 +183,20 @@ contract UnitTest is Test {
         vm.stopPrank();
     }
 
+    function testRevertIfNFTArtAlreadyBought()
+        public
+        mintNewNFT
+        registerWasteBank
+        createBobTransaction
+        swapBobTokenWithNFT
+        createAliceTransaction
+    {
+        vm.expectRevert(abi.encodeWithSelector(EcoChain.NFTArtAlreadyBought.selector, 0));
+        vm.startPrank(ALICE);
+        ecoChain.swapTokenWithNFT(0);
+        vm.stopPrank();
+    }
+
     function testRevertIfInsufficientUserBalanceCalled()
         public
         mintNewNFT
@@ -194,10 +223,8 @@ contract UnitTest is Test {
         mintNewNFT
         registerWasteBank
         createBobTransaction
+        swapBobTokenWithNFT
     {
-        vm.startPrank(BOB);
-        ecoChain.swapTokenWithNFT(0);
-        vm.stopPrank();
         uint256 expectedNumber = 0;
         uint256 actualNumber = ecoChain.getUserBalance(BOB);
         assertEq(expectedNumber, actualNumber);
