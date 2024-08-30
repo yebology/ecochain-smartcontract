@@ -8,7 +8,7 @@ import {EcoChain} from "../src/EcoChain.sol";
 import {EcoChainDeploy} from "../script/EcoChainDeploy.s.sol";
 import {Token} from "../src/Token.sol";
 
-contract UnitTest is Test {
+contract EcoChainTest is Test {
     //
     EcoChainDeploy ecoChainDeploy;
     EcoChain ecoChain;
