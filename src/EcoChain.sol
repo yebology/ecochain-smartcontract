@@ -6,8 +6,9 @@ import {NFT} from "../src/NFT.sol";
 import {Token} from "../src/Token.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {ERC721Holder} from "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
 
-contract EcoChain is ReentrancyGuard, Ownable {
+contract EcoChain is ReentrancyGuard, Ownable, ERC721Holder {
     //
     struct WasteBank {
         address wallet;
@@ -42,7 +43,10 @@ contract EcoChain is ReentrancyGuard, Ownable {
         string answer;
     }
 
-    WasteBank[] private wasteBanks;
+    mapping(address => bool) private _isWalletExist;
+    mapping(uint256 => bool) private _isNFTArtExist;
+
+    WasteBank[] private _wasteBanks;
     Review[] private reviews;
     Transaction[] private transactions;
     NFTArt[] private nftArts;
@@ -77,37 +81,21 @@ contract EcoChain is ReentrancyGuard, Ownable {
     error InvalidFAQData();
 
     modifier requireExistingNFTArt(uint256 _tokenId) {
-        if (nftArts.length < _tokenId) {
+        if (!_isNFTArtExist[_tokenId]) {
             revert NonExistingNFTArt();
         }
         _;
     }
 
     modifier onlyWasteBank(address _wallet) {
-        uint256 size = wasteBanks.length;
-        bool isValid = false;
-        for (uint256 i = 0; i < size; i++) {
-            if (wasteBanks[i].wallet == _wallet) {
-                isValid = true;
-                break;
-            }
-        }
-        if (!isValid) {
+        if (!_isWalletExist[_wallet]) {
             revert InvalidWasteBankWallet();
         }
         _;
     }
 
     modifier checkWalletStatus(address _wallet) {
-        uint256 size = wasteBanks.length;
-        bool isRegistered = false;
-        for (uint256 i = 0; i < size; i++) {
-            if (wasteBanks[i].wallet == _wallet) {
-                isRegistered = true;
-                break;
-            }
-        }
-        if (isRegistered) {
+        if (_isWalletExist[_wallet]) {
             revert WalletAlreadyRegistered(_wallet);
         }
         _;
@@ -174,13 +162,15 @@ contract EcoChain is ReentrancyGuard, Ownable {
         string memory _name,
         string memory _description,
         uint256 _price,
-        string memory _calldata
+        string memory _calldata,
+        string memory _image
     ) {
         if (
             bytes(_name).length == 0 ||
             bytes(_description).length == 0 ||
             _price == 0 ||
-            bytes(_calldata).length == 0
+            bytes(_calldata).length == 0 ||
+            bytes(_image).length == 0
         ) {
             revert InvalidNFTArtData();
         }
@@ -212,6 +202,7 @@ contract EcoChain is ReentrancyGuard, Ownable {
         checkWalletStatus(_wallet)
     {
         _addToWasteBanks(_wallet, _country, _city, _linkToMap);
+        _isWalletExist[_wallet] = true;
         emit WasteBankRegistered(_linkToMap);
     }
 
@@ -219,16 +210,17 @@ contract EcoChain is ReentrancyGuard, Ownable {
         string memory _name,
         string memory _description,
         uint256 _price,
-        string memory _calldata
+        string memory _calldata,
+        string memory _image
     )
         external
         onlyOwner
-        validateNFTArt(_name, _description, _price, _calldata)
+        validateNFTArt(_name, _description, _price, _calldata, _image)
     {
         uint256 tokenId = nftArts.length;
-        address owner = owner();
-        _addToNftArts(tokenId, _name, _description, _price, _calldata);
-        i_nft.mintNFT(owner, tokenId, _calldata);
+        _addToNftArts(tokenId, _name, _description, _price, _image);
+        i_nft.mintNFT(address(this), tokenId, _calldata);
+        _isNFTArtExist[tokenId] = true;
         emit NFTMinted(tokenId);
     }
 
@@ -279,9 +271,8 @@ contract EcoChain is ReentrancyGuard, Ownable {
         nonReentrant
     {
         uint256 nftArtPrice = nftArts[_tokenId].price;
-        address owner = owner();
         nftArts[_tokenId].isBought = true;
-        i_nft.transferNFT(owner, msg.sender, _tokenId);
+        i_nft.transferNFT(address(this), msg.sender, _tokenId);
         i_token.burnToken(msg.sender, nftArtPrice);
         emit NFTPurchased(_tokenId, msg.sender);
     }
@@ -315,7 +306,7 @@ contract EcoChain is ReentrancyGuard, Ownable {
     }
 
     function getWasteBanks() external view returns (WasteBank[] memory) {
-        return wasteBanks;
+        return _wasteBanks;
     }
 
     function getReviews() external view returns (Review[] memory) {
@@ -336,7 +327,7 @@ contract EcoChain is ReentrancyGuard, Ownable {
         string memory _city,
         string memory _linkToMap
     ) private {
-        wasteBanks.push(
+        _wasteBanks.push(
             WasteBank({
                 wallet: _wallet,
                 country: _country,
@@ -396,15 +387,10 @@ contract EcoChain is ReentrancyGuard, Ownable {
     }
 
     function _addToFAQs(
-        string memory _question, 
+        string memory _question,
         string memory _answer
     ) private {
-        faqs.push(
-            FAQ({
-                question: _question,
-                answer: _answer
-            })
-        );
+        faqs.push(FAQ({question: _question, answer: _answer}));
     }
 
     function _sendTokenToUser(

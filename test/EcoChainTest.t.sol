@@ -69,7 +69,8 @@ contract EcoChainTest is Test {
             "SAGE",
             "Lorem ipsum dolor sit amet",
             200,
-            "ipfs://sage.com"
+            "ipfs://sage.com",
+            "ipfs::/ecochain.com"
         );
         vm.stopPrank();
 
@@ -172,7 +173,7 @@ contract EcoChainTest is Test {
     function testRevertIfInvalidNFTArtDataCalled() public {
         vm.expectRevert(EcoChain.InvalidNFTArtData.selector);
         vm.startPrank(i_owner);
-        ecoChain.mintNewNFT("", "", 100, "");
+        ecoChain.mintNewNFT("", "", 100, "", "");
         vm.stopPrank();
     }
 

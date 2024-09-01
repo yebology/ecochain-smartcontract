@@ -16,7 +16,7 @@ contract Token is ERC20, Ownable {
     function burnToken(address _from, uint256 _amount) external onlyOwner {
         _burn(_from, _amount);
     }
-
+ 
     function getBalance(address _user) external onlyOwner view returns(uint256)  {
         return balanceOf(_user);
     }
